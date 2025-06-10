@@ -77,6 +77,8 @@ python local_llm_gui_reasoning.py
 ```
 Open the Gradio UI in your web browser at the provided local address.
 ![Screenshot_2025-06-10_13-13-22](https://github.com/user-attachments/assets/39d402f5-c20b-4895-a2ec-eb1db8ddb15a)
+
+The model being used in the screenshot is qwen3:1.7b, without RAG, with chat memory ingestion of the last 5 entries of the conversation. The exit button as defined here will end the processes, clearing chat memory in the process.
 ![Screenshot_2025-06-10_13-15-45](https://github.com/user-attachments/assets/385b03e7-57ae-434a-bb8a-81d7c4c8be47)
 
 ---
