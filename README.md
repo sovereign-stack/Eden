@@ -118,7 +118,7 @@ kos/
 
 ## License
 
-Open-source under MIT or Apache 2.0 (To be determined)
+Open-source under MIT
 
 ---
 
