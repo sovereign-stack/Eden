@@ -33,7 +33,7 @@ Eden/
 └── README.md
 ```
 
-*Note: The `memory/` directory (persistent chat and embeddings) is excluded for privacy and security.*
+*Note: The `memory/` directory (persistent chat and embeddings) is not tracked in Git for privacy and security. Be sure to `mkdir -p memory` before first run.*
 
 ---
 
@@ -58,6 +58,7 @@ sudo apt update && sudo apt install python3.10 python3-pip python3-venv
 python3 -m venv eden-env
 source eden-env/bin/activate
 pip install -r requirements.txt
+mkdir -p memory # Create folder to store chat history
 ```
 
 ### 3. Model Setup
@@ -65,7 +66,7 @@ pip install -r requirements.txt
 Install [Ollama](https://ollama.com/) and pull your desired models:
 ```sh
 ollama pull qwen3:1.7b
-ollama pull gemma:2b
+ollama pull gemma3:1b
 # Add other models as needed
 ```
 
