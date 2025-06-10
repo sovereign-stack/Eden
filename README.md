@@ -20,7 +20,7 @@
 
 ---
 
-## Project Structure
+## Project Structure (Planned)
 
 ```
 Eden/
