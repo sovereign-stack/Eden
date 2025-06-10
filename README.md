@@ -1,4 +1,5 @@
 # EDEN KOS: Knowledge Operating System (Edge AI Terminal)
+## v0.1
 
 ## Overview
 
