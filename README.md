@@ -2,133 +2,127 @@
 
 ## Overview
 
-**KOS (Knowledge Operating System)** is a modular, edge-deployable AI system built for complete offline use on devices such as the Jetson Orin Nano. KOS integrates a local LLM, persistent knowledge vault, and lightweight GUI, providing a privacy-respecting, self-sovereign AI terminal for advanced workflows. The architecture is designed to modularize AI behaviors into orchestrated agents, which can be triggered via GPIO-based capacitive touch controls, and interact with embedded document storage and reasoning systems.
+**Eden KOS** (Knowledge Operating System) is a modular, privacy-first, edge-deployable AI terminal for fully offline operation. Designed for devices like the Jetson Orin Nano, Eden integrates local LLMs, a retrieval-augmented generation (RAG) pipeline, a persistent knowledge vault, and a lightweight GUI, empowering users with self-sovereign AI workflows. The architecture is designed to modularize AI behaviors into orchestrated agents, which can be triggered via GPIO-based capacitive touch controls, and interact with embedded document storage and reasoning systems.
 
 ---
 
-## Objectives
+## Features
 
-- **Fully Offline:** All AI and RAG functionality runs locally—no cloud required.
-- **Modular Agents:** Orchestrate specialized agents for multi-step workflows.
-- **Self-Sovereign:** Designed for privacy, security, and user control.
-- **Persistent Knowledge Vault:** Embedded, indexable document storage and recall.
-- **Edge-Optimized:** Minimal resource usage, robust for low-power devices.
-
----
-
-## System Architecture
-
-### 1. Hardware Platform
-
-- **Board:** Jetson Orin Nano Developer Kit (Super variant, 67 TOPS)
-- **Storage:** 1TB NVMe SSD (with OS and Vault partitions)
-- **Memory:** 8GB RAM (expandable with zRAM swap)
-- **Cooling:** Passive copper baseplate + heatsink
-- **GPIO:** Capacitive touch mapped to AI agent/task triggers
-
-### 2. Operating System Structure
-
-- **Base Layer:** Ubuntu 20.04 LTS or NixOS (production)
-- **Partitions:**
-  - **MetaOS:** Agent boot/dev environment
-  - **VaultOS:** Embedding and indexing server (FAISS)
-  - **ProductOS:** End-user GUI that invokes agents
-
-### 3. Software Components
-
-- **Language:** Python 3.10+
-- **GUI:** Gradio (with plans for native/hybrid lightweight UI)
-- **LLM Interface:** Ollama (with Gemma, Phi, Qwen, etc.)
-- **RAG:** FAISS + local JSON knowledge base
-- **Memory:** JSON-based, in-session and persistent
-- **Agent Logic:** Stateless prompts, multi-turn summarization, GPIO event triggers
+- **Fully Offline AI:** No cloud, no telemetry—everything runs locally.
+- **RAG Framework:** Fast, local document retrieval with [FAISS](https://github.com/facebookresearch/faiss) and [HuggingFace embeddings](https://huggingface.co/).
+- **LLM Support via Ollama:** Run state-of-the-art models such as Gemma, Qwen, Phi, and Mistral.
+- **Modular Agent Architecture:** Agents and workflows triggered by UI or physical GPIO (planned).
+- **Privacy-First:** All data and history stay on-device.
+- **Edge-Optimized:** Built and tested on Jetson Orin Nano (8GB RAM + zRAM, 1TB NVMe).
+- **Lightweight GUI:** [Gradio](https://gradio.app/) chat interface with markdown rendering and session memory.
+- **Document Vault:** Embedded, indexable knowledge base for proprietary or private documents.
 
 ---
 
-## Key Features
-
-- **Offline LLM chat** with retained, local conversation memory
-- **Markdown-rendered interface** (Gradio) with conversation history
-- **Touch-based agent launches** (via GPIO inputs)
-- **Configurable prompt window** (sliding context size)
-- **Embedded document retrieval** (FAISS, HuggingFace embeddings)
-- **Planned:** Multi-agent orchestration layer for complex reasoning
-
----
-
-## Getting Started
-
-### 1. Hardware Prep
-
-- Flash Jetson Orin Nano with Ubuntu Minimal or custom NixOS image
-- Boot from NVMe SSD (partition for OS, separate for Vault)
-
-### 2. Python Environment
-
-```sh
-sudo apt update && sudo apt install python3.10 python3-pip python3-venv
-python3 -m venv rag-env
-source rag-env/bin/activate
-pip install gradio ollama faiss-cpu
-```
-
-### 3. Model Setup
-
-```sh
-ollama pull qwen3:1.7b
-ollama pull gemma:2b
-```
-
-### 4. Run the Application
-
-```sh
-python local_llm_gui_reasoning.py
-```
-
----
-
-## Directory Structure (Planned)
+## Project Structure
 
 ```
-kos/
-├── models/             # Model config + Ollama prompts
-├── memory/             # Persistent chat and embeddings
-├── vault/              # Indexed documents for retrieval
-├── ui/                 # UI logic and display
-├── system/             # Scripts to launch or mount OS logic
-├── scripts/            # GPIO handlers and agent triggers
+Eden/
+├── models/                     # Model configs and Ollama prompts
+├── vault/                      # Indexed documents for retrieval
+├── ui/                         # UI logic and display
+├── system/                     # Scripts to launch or mount OS logic
+├── scripts/                    # GPIO handlers and agent triggers
 ├── local_llm_gui_reasoning.py  # Main app logic
 ├── requirements.txt
 └── README.md
 ```
 
+*Note: The `memory/` directory (persistent chat and embeddings) is excluded for privacy and security.*
+
 ---
 
-## Future Roadmap
+## Quickstart
 
-- Minimal ProductOS with only necessary binaries and models
-- Agent swap logic based on task and workflow
-- GUI optimization (reduce memory footprint)
-- Long-term FAISS-based chat memory via embedding snapshots
-- GPIO event listeners for workflow triggers
-- Transition to native/hybrid UI
-- Publish .nix packages and NixOS flake-based images
+### Hardware & OS
+
+- **Platform:** Jetson Orin Nano (Super variant recommended)
+- **OS:** Ubuntu 20.04 LTS Minimal (or NixOS for advanced users)
+- **Storage:** 1TB NVMe SSD (partition for OS, partition for Vault)
+- **RAM:** 8GB (expandable with zRAM swap)
+
+### 1. Hardware Prep
+
+- Flash Jetson Orin Nano with Ubuntu Minimal or custom NixOS image.
+- Boot from NVMe SSD (partition for OS, separate for Vault).
+
+### 2. Environment Setup
+
+```sh
+sudo apt update && sudo apt install python3.10 python3-pip python3-venv
+python3 -m venv eden-env
+source eden-env/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. Model Setup
+
+Install [Ollama](https://ollama.com/) and pull your desired models:
+```sh
+ollama pull qwen3:1.7b
+ollama pull gemma:2b
+# Add other models as needed
+```
+
+### 4. Running Eden
+
+```sh
+python local_llm_gui_reasoning.py
+```
+Open the Gradio UI in your web browser at the provided local address.
+
+---
+
+## Model Compatibility
+
+| Model           | Tested | RAM Requirement | Notes           |
+|-----------------|--------|-----------------|-----------------|
+| Gemma3:1b/4b    | ✔️     | 4-8GB           | Fast, versatile |
+| Qwen3:1.7b/4b   | ✔️     | 6-8GB           | Good reasoning  |
+| Phi3/phi4-mini  | ✔️     | 4GB+            | Light footprint |
+| Mistral:7b      | ✔️     | 8GB+            | Higher quality  |
+
+*All models tested via Ollama on Jetson Orin Nano.*
+
+---
+
+## Advanced Features & Roadmap
+
+- **Agent Orchestration:** Multi-agent workflows and task-based LLM swaps
+- **GPIO Agent Triggers:** Launch agents with physical touch buttons
+- **ProductOS:** Minimal OS with only necessary binaries and models
+- **VaultOS:** Embedded, persistent document indexing server 
+- **Lightweight Native UI:** Transition from Gradio to native/hybrid GUI to reduce memory footprint
+- **Long-term Memory:** FAISS-based chat memory via embedding snapshots
+- **NixOS Support:** Flake-based boot images and .nix packages
+
+---
+
+## Contributing
+
+PRs and issues are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, or open an issue for questions.
 
 ---
 
 ## License
 
-Open-source under MIT
+Open-source under MIT.
 
 ---
 
 ## Maintainer
 
-**Komalpreet Singh**
-www.linkedin.com/in/komalsinghs
-Builder of edge-native, privacy-first AI terminals.  
-Passionate about self-sovereign systems and creative computation.
+**Komalpreet Singh**  
+[3den.ai](https://3den.ai)  
+[LinkedIn](https://www.linkedin.com/in/komalsinghs)
+
+Builder of edge-native, privacy-first AI terminals. Passionate about self-sovereign systems and creative computation.
 
 ---
 
-*For issues, feedback, or contributions, please use the GitHub Issues page or contact the maintainer directly.*
+*For support or collaboration, open an issue or reach out via GitHub.*
