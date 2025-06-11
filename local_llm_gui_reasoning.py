@@ -5,10 +5,10 @@ import ollama
 import atexit
 
 # === Configuration ===
-#LLM_MODEL = "gemma3:1b"	# 815 MB
+LLM_MODEL = "gemma3:1b"	# 815 MB
 #LLM_MODEL = "gemma3:4b"	# 3.3 GB
 #LLM_MODEL = "qwen3:0.6b"	# 522 MB
-LLM_MODEL = "qwen3:1.7b"	# 1.4 GB
+#LLM_MODEL = "qwen3:1.7b"	# 1.4 GB
 #LLM_MODEL = "qwen3:4b"		# 2.6 GB
 #LLM_MODEL = "qwen3:8b"		# 5.2 GB
 #LLM_MODEL = "phi3:latest	# 2.2 GB
