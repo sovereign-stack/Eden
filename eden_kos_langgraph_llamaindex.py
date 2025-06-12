@@ -1,4 +1,4 @@
-# Eden KOS v0.2 - LangGraph Integrated RAG System with Context-Aware Prompting (Offline, Enhanced)
+# Eden KOS v0.3 - LangGraph Integrated RAG System with LlamaIndex and Clean Context Separation
 
 import os
 import json
@@ -11,10 +11,10 @@ from textual.containers import Container
 from textual.widgets import Header, Footer, Input, Static
 from rich.text import Text
 
-from langchain_community.document_loaders import TextLoader
-from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, ServiceContext, load_index_from_storage
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.vector_stores.faiss import FaissVectorStore
+from llama_index.core.node_parser import SentenceSplitter
 
 from langgraph.graph import StateGraph, END
 
@@ -26,25 +26,18 @@ os.environ["HF_DATASETS_OFFLINE"] = "1"
 DOC_DIR = "docs"
 HISTORY_FILE = "memory/chat_history.json"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL = "gemma3:1b"
+LLM_MODEL = "qwen3:1.7b"
 
 # === Utilities ===
-def load_documents() -> List:
-    all_docs = []
-    for filename in os.listdir(DOC_DIR):
-        if filename.endswith(".txt"):
-            path = os.path.join(DOC_DIR, filename)
-            loader = TextLoader(path, encoding="utf-8")
-            docs = loader.load()
-            for doc in docs:
-                doc.metadata["source"] = filename
-            all_docs.extend(docs)
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    return splitter.split_documents(all_docs)
-
-def get_vectorstore(docs: List) -> FAISS:
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-    return FAISS.from_documents(docs, embeddings)
+def load_index() -> VectorStoreIndex:
+    documents = SimpleDirectoryReader(DOC_DIR).load_data()
+    splitter = SentenceSplitter(chunk_size=100, chunk_overlap=10)
+    nodes = splitter.get_nodes_from_documents(documents)
+    embed_model = HuggingFaceEmbedding(model_name=EMBEDDING_MODEL)
+    index = VectorStoreIndex.from_documents(
+        documents, embed_model=embed_model, show_progress=True
+    )
+    return index
 
 def load_memory() -> List[Dict]:
     if os.path.exists(HISTORY_FILE):
@@ -67,64 +60,33 @@ def clear_memory():
         os.remove(HISTORY_FILE)
 
 def build_prompt(query, memory, docs):
-    # keep last 5 turns, but only for style/continuity
-    past = "\n".join(
-        f"User: {m['user']}\nAssistant: {m['assistant']}"
-        for m in memory[-3:]
+    context = (
+        "\n".join(f"({d.metadata.get('file_path', 'doc')}) {d.text.strip()}" for d in docs)
+        if docs else "None"
     )
+    history = (
+        "\n".join(f"User: {m['user']}\nAssistant: {m['assistant']}" for m in memory)
+        if memory else "None"
+    )
+    return f"""Contextual Retrieval:\n{context}
 
-    # only “real” document snippets
-    context_docs = [d for d in docs if len(d.page_content.strip()) >= 30]
-    if context_docs:
-        context = "\n".join(
-            f"({d.metadata.get('source','unknown')}) {d.page_content.strip()}"
-            for d in context_docs
-        )
-    else:
-        context = "(no relevant document context found)"
+Chat History:\n{history}
 
-    return f"""You are a helpful assistant. You have three things:
+User Question: {query}
 
-1. **Document context** (below)—use *only* if it directly answers the question, and cite it.  
-2. **Your own general knowledge**—you may always fall back on this.  
-3. **Chat history** (below)—for conversational continuity only; do **not** treat it as a factual source.
-
-**Always** answer the user’s question.  
-- If a document snippet contains the answer, cite it (e.g. (source.txt) …).  
-- Otherwise, **ignore** document context and answer from your own knowledge.  
-- Do **not** cite or rely on the chat history for facts.  
-
-
-=== CONTEXT ===
-{context}
-
-=== CHAT HISTORY ===
-{past}
-
-=== QUESTION ===
-{query}
-
-=== ANSWER ===
-"""
-
-
+Answer as clearly as possible. Only cite the context section if quoting documents."""
 
 # === LangGraph Nodes ===
 def retrieve(state):
     query = state["input"]
-    # Fetch results with scores
-    results_with_scores = state["vectorstore"].similarity_search_with_score(query, k=5)
-
-    # Set a conservative threshold (0.8–0.85 usually works well; lower is looser)
-    threshold = 0.82
-    filtered_results = [doc for doc, score in results_with_scores if score >= threshold]
-
-    state["retrieved"] = filtered_results
+    retriever = state["index"].as_retriever(similarity_top_k=5)
+    results = retriever.retrieve(query)
+    state["retrieved"] = results
     return state
 
-
 def recall_memory(state):
-    state["memory"] = load_memory()
+    memory = load_memory()
+    state["memory"] = memory[-5:] if memory else []
     return state
 
 def prompt_compose(state):
@@ -135,8 +97,17 @@ def generate_response(state):
     response = ollama.chat(
         model=LLM_MODEL,
         messages=[
-            {"role": "system", "content": "You're a helpful assistant. Use context or your own knowledge to answer."},
-            {"role": "user", "content": state["prompt"]}
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful assistant with three inputs:\n"
+                    "- Document context: use only if it clearly answers the question.\n"
+                    "- Chat history: use for tone and flow only, not factual answers.\n"
+                    "- General knowledge: always fall back to this if context is missing.\n"
+                    "Never cite chat history. Only cite documents if quoting directly."
+                ),
+            },
+            {"role": "user", "content": state["prompt"]},
         ]
     )
     state["output"] = response["message"]["content"]
@@ -154,7 +125,7 @@ def display_response(state):
 
 class RAGState(TypedDict):
     input: str
-    vectorstore: Any
+    index: Any
     memory: list
     retrieved: list
     prompt: str
@@ -184,17 +155,18 @@ def build_graph():
 class EdenApp(App):
     CSS_PATH = "style.css"
 
-    def __init__(self, db, graph):
+    def __init__(self, index, graph):
         super().__init__()
-        self.db = db
+        self.index = index
         self.graph = graph
         self.output_widget: Static | None = None
+        self.chat_log: List[Text] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield Container(
             Input(placeholder="Ask a question...", id="query_input"),
-            Static(id="output_area")
+            Static(id="output_area", expand=True, classes="scrollable")
         )
         yield Footer()
 
@@ -211,27 +183,24 @@ class EdenApp(App):
 
         state = await to_thread(self.graph.invoke, {
             "input": query,
-            "vectorstore": self.db
+            "index": self.index
         })
         response = state["output"]
 
-        # Build a Rich Text renderable from BBCode-style markup
         rendered = Text.from_markup(
             f"[b]User:[/b] {query}\n"
             f"[i]Assistant:[/i] {response}\n\n"
         )
-        self.output_widget.update(rendered)
+        self.chat_log.append(rendered)
+        self.output_widget.update(Text().join(self.chat_log))
         self.query_one("#query_input", Input).value = ""
 
 def main():
-    docs = load_documents()
-    if not docs:
-        print(f"❌ No documents found in '{DOC_DIR}'.")
-        return
-    db = get_vectorstore(docs)
+    index = load_index()
     graph = build_graph()
-    app = EdenApp(db, graph)
+    app = EdenApp(index, graph)
     app.run()
 
 if __name__ == "__main__":
     main()
+

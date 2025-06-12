@@ -1,4 +1,4 @@
-# Eden KOS v0.2 - LangGraph Integrated RAG System with Context-Aware Prompting (Offline, Enhanced)
+# Eden KOS v0.2 - LangGraph Integrated RAG System with Clean Context Separation
 
 import os
 import json
@@ -26,7 +26,9 @@ os.environ["HF_DATASETS_OFFLINE"] = "1"
 DOC_DIR = "docs"
 HISTORY_FILE = "memory/chat_history.json"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL = "gemma3:1b"
+#LLM_MODEL = "gemma3:1b"
+#LLM_MODEL = "gemma3:4b"
+LLM_MODEL = "qwen3:1.7b"
 
 # === Utilities ===
 def load_documents() -> List:
@@ -39,7 +41,7 @@ def load_documents() -> List:
             for doc in docs:
                 doc.metadata["source"] = filename
             all_docs.extend(docs)
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=10)
     return splitter.split_documents(all_docs)
 
 def get_vectorstore(docs: List) -> FAISS:
@@ -67,64 +69,34 @@ def clear_memory():
         os.remove(HISTORY_FILE)
 
 def build_prompt(query, memory, docs):
-    # keep last 5 turns, but only for style/continuity
-    past = "\n".join(
-        f"User: {m['user']}\nAssistant: {m['assistant']}"
-        for m in memory[-3:]
+    context = (
+        "\n".join(f"({d.metadata.get('source', 'doc')}) {d.page_content.strip()}" for d in docs)
+        if docs else "None"
     )
+    history = (
+        "\n".join(f"User: {m['user']}\nAssistant: {m['assistant']}" for m in memory)
+        if memory else "None"
+    )
+    return f"""Contextual Retrieval:\n{context}
 
-    # only “real” document snippets
-    context_docs = [d for d in docs if len(d.page_content.strip()) >= 30]
-    if context_docs:
-        context = "\n".join(
-            f"({d.metadata.get('source','unknown')}) {d.page_content.strip()}"
-            for d in context_docs
-        )
-    else:
-        context = "(no relevant document context found)"
+Chat History:\n{history}
 
-    return f"""You are a helpful assistant. You have three things:
+User Question: {query}
 
-1. **Document context** (below)—use *only* if it directly answers the question, and cite it.  
-2. **Your own general knowledge**—you may always fall back on this.  
-3. **Chat history** (below)—for conversational continuity only; do **not** treat it as a factual source.
-
-**Always** answer the user’s question.  
-- If a document snippet contains the answer, cite it (e.g. (source.txt) …).  
-- Otherwise, **ignore** document context and answer from your own knowledge.  
-- Do **not** cite or rely on the chat history for facts.  
-
-
-=== CONTEXT ===
-{context}
-
-=== CHAT HISTORY ===
-{past}
-
-=== QUESTION ===
-{query}
-
-=== ANSWER ===
-"""
-
-
+Answer as clearly as possible. Only cite the context section if quoting documents."""
 
 # === LangGraph Nodes ===
 def retrieve(state):
     query = state["input"]
-    # Fetch results with scores
     results_with_scores = state["vectorstore"].similarity_search_with_score(query, k=5)
-
-    # Set a conservative threshold (0.8–0.85 usually works well; lower is looser)
     threshold = 0.82
     filtered_results = [doc for doc, score in results_with_scores if score >= threshold]
-
     state["retrieved"] = filtered_results
     return state
 
-
 def recall_memory(state):
-    state["memory"] = load_memory()
+    memory = load_memory()
+    state["memory"] = memory[-5:] if memory else []
     return state
 
 def prompt_compose(state):
@@ -135,8 +107,17 @@ def generate_response(state):
     response = ollama.chat(
         model=LLM_MODEL,
         messages=[
-            {"role": "system", "content": "You're a helpful assistant. Use context or your own knowledge to answer."},
-            {"role": "user", "content": state["prompt"]}
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful assistant with three inputs:\n"
+                    "- Document context: use only if it clearly answers the question.\n"
+                    "- Chat history: use for tone and flow only, not factual answers.\n"
+                    "- General knowledge: always fall back to this if context is missing.\n"
+                    "Never cite chat history. Only cite documents if quoting directly."
+                ),
+            },
+            {"role": "user", "content": state["prompt"]},
         ]
     )
     state["output"] = response["message"]["content"]
@@ -215,7 +196,6 @@ class EdenApp(App):
         })
         response = state["output"]
 
-        # Build a Rich Text renderable from BBCode-style markup
         rendered = Text.from_markup(
             f"[b]User:[/b] {query}\n"
             f"[i]Assistant:[/i] {response}\n\n"
@@ -235,3 +215,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
