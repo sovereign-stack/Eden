@@ -2,8 +2,8 @@
 
 import os
 import json
+import torch
 from typing import Dict, List, TypedDict, Any
-
 import ollama
 from asyncio import to_thread
 from textual.app import App, ComposeResult
@@ -24,25 +24,35 @@ from llama_index.core.node_parser import SentenceSplitter
 
 from langgraph.graph import StateGraph, END
 
+# === Compatibility Patch for Jetson's PyTorch (no distributed support) ===
+if not hasattr(torch, "distributed"):
+    import types
+    torch.distributed = types.SimpleNamespace(
+        is_initialized=lambda: False
+    )
+
+# === GPU Check ===
+print(torch.cuda.is_available())
+print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU")
+
 # === Environment Setup ===
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["HF_DATASETS_OFFLINE"] = "1"
+os.environ["HF_HUB_OFFLINE"] = "1"  # Prevents online downloads
 
 # === Configuration ===
 DOC_DIR = "docs"
 HISTORY_FILE = "memory/chat_history.json"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-#LLM_MODEL = "gemma3:1b"
-#LLM_MODEL = "qwen3:1.7b"
-#LLM_MODEL = "qwen3:4b"
-#LLM_MODEL = "phi3:latest"
-LLM_MODEL = "mistral:7b"
+LLM_MODEL = "qwen3:1.7b"  # Update model here
 
 # === Utilities ===
 def load_index() -> VectorStoreIndex:
     documents = SimpleDirectoryReader(DOC_DIR).load_data()
     splitter = SentenceSplitter(chunk_size=100, chunk_overlap=10)
     nodes = splitter.get_nodes_from_documents(documents)
+
+    # Ensure HuggingFaceEmbedding loads models offline
     embed_model = HuggingFaceEmbedding(model_name=EMBEDDING_MODEL)
     index = VectorStoreIndex.from_documents(
         documents, embed_model=embed_model, show_progress=True
@@ -209,3 +219,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
