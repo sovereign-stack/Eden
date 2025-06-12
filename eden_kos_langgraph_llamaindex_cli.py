@@ -1,26 +1,16 @@
-# Eden KOS v0.3 - LangGraph Integrated RAG System with LlamaIndex and Clean Context Separation
+# Eden KOS v0.3 - CLI + Rich version (no Textual UI)
 
 import os
 import json
 from typing import Dict, List, TypedDict, Any
-
-import ollama
-from asyncio import to_thread
-from textual.app import App, ComposeResult
-from textual.containers import Vertical
-from textual.widgets import Header, Footer, Input, Static
-from rich.text import Text
-
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, ServiceContext, load_index_from_storage
+from rich.console import Console
+from rich.panel import Panel
+from rich.markdown import Markdown
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.vector_stores.faiss import FaissVectorStore
 from llama_index.core.node_parser import SentenceSplitter
-
 from langgraph.graph import StateGraph, END
-
-# === Environment Setup ===
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
-os.environ["HF_DATASETS_OFFLINE"] = "1"
+import ollama
 
 # === Configuration ===
 DOC_DIR = "docs"
@@ -32,11 +22,8 @@ LLM_MODEL = "qwen3:1.7b"
 def load_index() -> VectorStoreIndex:
     documents = SimpleDirectoryReader(DOC_DIR).load_data()
     splitter = SentenceSplitter(chunk_size=100, chunk_overlap=10)
-    nodes = splitter.get_nodes_from_documents(documents)
     embed_model = HuggingFaceEmbedding(model_name=EMBEDDING_MODEL)
-    index = VectorStoreIndex.from_documents(
-        documents, embed_model=embed_model, show_progress=True
-    )
+    index = VectorStoreIndex.from_documents(documents, embed_model=embed_model, show_progress=True)
     return index
 
 def load_memory() -> List[Dict]:
@@ -68,10 +55,7 @@ def build_prompt(query, memory, docs):
         "\n".join(f"User: {m['user']}\nAssistant: {m['assistant']}" for m in memory)
         if memory else "None"
     )
-    return f"""Contextual Retrieval:\n{context}\n
-Chat History:\n{history}\n
-User Question: {query}\n
-Answer as clearly as possible. Only cite the context section if quoting documents."""
+    return f"""Contextual Retrieval:\n{context}\n\nChat History:\n{history}\n\nUser Question: {query}\n\nAnswer as clearly as possible. Only cite the context section if quoting documents."""
 
 # === LangGraph Nodes ===
 def retrieve(state):
@@ -148,64 +132,31 @@ def build_graph():
 
     return builder.compile()
 
-# === Textual UI ===
-class EdenApp(App):
-    #CSS_PATH = "style.tcss"
-
-    def __init__(self, index, graph):
-        super().__init__()
-        self.index = index
-        self.graph = graph
-        self.output_widget: Static | None = None
-        self.chat_log: List[Text] = []
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Vertical(
-            Input(placeholder="Ask a question...", id="query_input"),
-            Static(id="output_area", expand=True),
-            id="chat_panel",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self.output_widget = self.query_one("#output_area", Static)
-        self.output_widget.styles.text_wrap = "wrap"
-        self.output_widget.styles.overflow_y = "auto"
-        self.output_widget.styles.overflow_x = "hidden"
-        self.query_one("#query_input", Input).focus()
-
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
-        query = event.value.strip()
-        if query.lower() in {"exit", "quit"}:
-            self.exit()
-            return
-
-        state = await to_thread(self.graph.invoke, {
-            "input": query,
-            "index": self.index
-        })
-        response = state["output"]
-
-        rendered = Text.from_markup(
-            f"[b]User:[/b] {query}\n[i]Assistant:[/i] {response}\n\n"
-        )
-        self.chat_log.append(rendered)
-        self.output_widget.update(Text().join(self.chat_log))
-        self.call_after_refresh(self._scroll_to_bottom)
-
-        self.query_one("#query_input", Input).value = ""
-
-    def _scroll_to_bottom(self) -> None:
-        if self.output_widget:
-            self.output_widget.scroll_end(animate=False)
-
-
+# === CLI Loop ===
 def main():
+    console = Console()
     index = load_index()
     graph = build_graph()
-    app = EdenApp(index, graph)
-    app.run()
+    chat_history = []
+
+    console.print("\n[bold magenta]Welcome to Eden KOS (CLI Mode)[/bold magenta]\nType 'exit' or 'quit' to end.\n")
+
+    while True:
+        query = console.input("[bold green]You:[/bold green] ").strip()
+        if query.lower() in {"exit", "quit"}:
+            console.print("\n[dim]Session ended.[/dim]")
+            clear_memory()
+            console.print("\n[dim]Memory cleared.[/dim]")
+            break
+
+        state = graph.invoke({"input": query, "index": index})
+        response = state["output"]
+        chat_history.append((query, response))
+
+        console.clear()
+        for i, (user, assistant) in enumerate(chat_history):
+            console.print(Panel(f"[bold green]You:[/bold green] {user}", title=f"Turn {i+1}", expand=False))
+            console.print(Markdown(f"**Assistant:** {assistant}"))
 
 if __name__ == "__main__":
     main()
