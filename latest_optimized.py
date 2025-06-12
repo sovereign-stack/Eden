@@ -236,9 +236,3 @@ if __name__ == "__main__":
     main()
 
 
-
-# NOTE: To further optimize embedding, wrap inference in `with torch.no_grad()` inside the encode function of the embedding model if subclassed.
-
-# Optional: Save and load index for faster startup after first run
-# index.save_to_disk("index.json")
-# index = load_index_from_storage("index.json", embed_model=embed_model)

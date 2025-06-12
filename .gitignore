@@ -1,4 +1,8 @@
-_pycache_/
+__pycache__/
 *.pyc
 *.log
-memory/*.json
+memory/simple_chat.json #Optional
+# Ignore all log files and content in the logs folder
+logs/*
+!logs/.gitkeep
+
