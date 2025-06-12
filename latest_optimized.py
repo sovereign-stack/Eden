@@ -31,9 +31,11 @@ def load_index() -> VectorStoreIndex:
     documents = SimpleDirectoryReader(DOC_DIR).load_data()
     splitter = SentenceSplitter(chunk_size=100, chunk_overlap=10)
     embed_model = HuggingFaceEmbedding(
-    	model_name=EMBEDDING_MODEL,
-    	device = "cuda"
-    	)
+        model_name=EMBEDDING_MODEL,
+        device="cuda",  # Use Jetson GPU
+        embed_batch_size=4,  # Lower batch size for 8GB GPU
+        model_kwargs={"torch_dtype": torch.float16}  # Use float16 if supported
+    )
     return VectorStoreIndex.from_documents(documents, embed_model=embed_model, show_progress=True)
 
 def load_memory() -> List[Dict]:
@@ -199,7 +201,7 @@ def main():
         chat_history.append((query, None))
 
         # Clear console and replay chat history
-        console.clear()
+        # console.clear()  # Disabled for performance on Jetson terminal
         for i, (u, a) in enumerate(chat_history[:-1]):
             console.print(Panel(f"[bold green]You:[/bold green] {u}", title=f"Turn {i+1}", expand=False))
             console.print(Markdown(f"**Assistant:** {a}"))
@@ -233,3 +235,10 @@ def main():
 if __name__ == "__main__":
     main()
 
+
+
+# NOTE: To further optimize embedding, wrap inference in `with torch.no_grad()` inside the encode function of the embedding model if subclassed.
+
+# Optional: Save and load index for faster startup after first run
+# index.save_to_disk("index.json")
+# index = load_index_from_storage("index.json", embed_model=embed_model)
