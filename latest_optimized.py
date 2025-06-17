@@ -21,17 +21,35 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 from langgraph.graph import StateGraph, END
 
+# === Compatibility Patch for Jetson's PyTorch (no distributed support) ===
+if not hasattr(torch, "distributed"):
+    import types
+    torch.distributed = types.SimpleNamespace(
+        is_initialized=lambda: False
+    )
+
+# === GPU Check ===
+print(torch.cuda.is_available())
+print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU")
+
+# === Environment Setup ===
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_DATASETS_OFFLINE"] = "1"
+os.environ["HF_HUB_OFFLINE"] = "1"
+
 # === Configuration ===
 DOC_DIR = "docs"
 HISTORY_FILE = "memory/chat_history.json"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+# Update EMBEDDING_MODEL to the exact local path
+EMBEDDING_MODEL = "/home/developer/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/"
 
 # === Utilities ===
 def load_index() -> VectorStoreIndex:
     documents = SimpleDirectoryReader(DOC_DIR).load_data()
     splitter = SentenceSplitter(chunk_size=100, chunk_overlap=10)
     embed_model = HuggingFaceEmbedding(
-        model_name=EMBEDDING_MODEL,
+        model_name=EMBEDDING_MODEL, # Now points directly to your local path
+        local_files_only=True,     # Forces offline loading
         device="cuda",  # Use Jetson GPU
         embed_batch_size=4,  # Lower batch size for 8GB GPU
         model_kwargs={"torch_dtype": torch.float16}  # Use float16 if supported
@@ -234,5 +252,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

@@ -43,7 +43,7 @@ os.environ["HF_HUB_OFFLINE"] = "1"  # Prevents online downloads
 # === Configuration ===
 DOC_DIR = "docs"
 HISTORY_FILE = "memory/chat_history.json"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "/home/developer/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/"
 LLM_MODEL = "qwen3:1.7b"  # Update model here
 
 # === Utilities ===
@@ -53,11 +53,14 @@ def load_index() -> VectorStoreIndex:
     nodes = splitter.get_nodes_from_documents(documents)
 
     # Ensure HuggingFaceEmbedding loads models offline
-    embed_model = HuggingFaceEmbedding(model_name=EMBEDDING_MODEL)
-    index = VectorStoreIndex.from_documents(
-        documents, embed_model=embed_model, show_progress=True
+    embed_model = HuggingFaceEmbedding(
+        model_name=EMBEDDING_MODEL, # Now points directly to your local path
+        local_files_only=True,     # Forces offline loading
+        device="cuda",  # Use Jetson GPU
+        embed_batch_size=4,  # Lower batch size for 8GB GPU
+        model_kwargs={"torch_dtype": torch.float16}  # Use float16 if supported
     )
-    return index
+    return VectorStoreIndex.from_documents(documents, embed_model=embed_model, show_progress=True)
 
 def load_memory() -> List[Dict]:
     if os.path.exists(HISTORY_FILE):
