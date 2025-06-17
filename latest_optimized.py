@@ -16,10 +16,12 @@ from rich.prompt import Prompt
 from rich import box
 from rich.text import Text
 from rich.align import Align
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+# Make sure to import load_index_from_storage and StorageContext
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, load_index_from_storage
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 from langgraph.graph import StateGraph, END
+import hashlib # Import for hashing
 
 # === Compatibility Patch for Jetson's PyTorch (no distributed support) ===
 if not hasattr(torch, "distributed"):
@@ -40,21 +42,87 @@ os.environ["HF_HUB_OFFLINE"] = "1"
 # === Configuration ===
 DOC_DIR = "docs"
 HISTORY_FILE = "memory/chat_history.json"
+# New: Directory to save/load the index
+PERSIST_DIR = "/home/developer/rag-orin/embedding_store/"
+DOCS_HASH_FILE = os.path.join(PERSIST_DIR, "docs_hash.txt") # File to store the documents hash
 # Update EMBEDDING_MODEL to the exact local path
 EMBEDDING_MODEL = "/home/developer/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/"
 
 # === Utilities ===
+def get_docs_hash(directory: str) -> str:
+    """Generates a hash based on file paths, sizes, and modification times in a directory."""
+    hasher = hashlib.md5()
+    file_info = []
+    for root, _, files in os.walk(directory):
+        for file in sorted(files): # Sort to ensure consistent hash regardless of OS file order
+            filepath = os.path.join(root, file)
+            try:
+                stat = os.stat(filepath)
+                file_info.append(f"{filepath}-{stat.st_size}-{stat.st_mtime}")
+            except OSError:
+                # Handle cases where file might be inaccessible or disappear during scan
+                pass
+    # Hash the concatenated string of file info
+    hasher.update("".join(file_info).encode('utf-8'))
+    return hasher.hexdigest()
+
 def load_index() -> VectorStoreIndex:
-    documents = SimpleDirectoryReader(DOC_DIR).load_data()
-    splitter = SentenceSplitter(chunk_size=100, chunk_overlap=10)
+    # Ensure the persistence directory exists
+    if not os.path.exists(PERSIST_DIR):
+        os.makedirs(PERSIST_DIR)
+
+    # Initialize the embedding model outside the try-except block
+    # so it's available for both loading and rebuilding the index.
     embed_model = HuggingFaceEmbedding(
-        model_name=EMBEDDING_MODEL, # Now points directly to your local path
-        local_files_only=True,     # Forces offline loading
-        device="cuda",  # Use Jetson GPU
-        embed_batch_size=4,  # Lower batch size for 8GB GPU
-        model_kwargs={"torch_dtype": torch.float16}  # Use float16 if supported
+        model_name=EMBEDDING_MODEL,
+        local_files_only=True,
+        device="cuda",
+        embed_batch_size=4,
+        model_kwargs={"torch_dtype": torch.float16}
     )
-    return VectorStoreIndex.from_documents(documents, embed_model=embed_model, show_progress=True)
+
+    index = None
+    should_rebuild = False
+    current_docs_hash = get_docs_hash(DOC_DIR)
+    last_docs_hash = None
+
+    if os.path.exists(DOCS_HASH_FILE):
+        with open(DOCS_HASH_FILE, 'r') as f:
+            last_docs_hash = f.read().strip()
+
+    if last_docs_hash != current_docs_hash:
+        print("Document directory changed or no previous hash found. Index will be rebuilt.")
+        should_rebuild = True
+    else:
+        print("Document directory hash matches. Attempting to load existing index.")
+
+    if not should_rebuild:
+        try:
+            # Correct way to load: create StorageContext first, then load index from it
+            # Pass the initialized embed_model when loading the index
+            print(f"Attempting to load index from {PERSIST_DIR} using {EMBEDDING_MODEL}...")
+            storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
+            index = load_index_from_storage(storage_context=storage_context, embed_model=embed_model)
+            print("Index loaded successfully from storage.")
+        except Exception as e:
+            print(f"Could not load index from storage ({e}). Forcing rebuild...")
+            should_rebuild = True # Force rebuild if loading fails even if hash matches
+
+    if should_rebuild:
+        print("Rebuilding index...")
+        documents = SimpleDirectoryReader(DOC_DIR).load_data()
+        splitter = SentenceSplitter(chunk_size=100, chunk_overlap=10)
+        
+        index = VectorStoreIndex.from_documents(documents, embed_model=embed_model, show_progress=True)
+        # After building, explicitly persist the index using its storage_context
+        index.storage_context.persist(persist_dir=PERSIST_DIR)
+        print(f"Index rebuilt and persisted to {PERSIST_DIR}.")
+        
+        # Save the current hash after successful rebuild and persistence
+        with open(DOCS_HASH_FILE, 'w') as f:
+            f.write(current_docs_hash)
+        print(f"Updated document hash saved to {DOCS_HASH_FILE}.")
+    return index
 
 def load_memory() -> List[Dict]:
     if os.path.exists(HISTORY_FILE):
@@ -75,8 +143,8 @@ def clear_memory():
         os.remove(HISTORY_FILE)
 
 def build_prompt(query, memory, docs, system_prompt):
-    context = "\n".join(f"({d.metadata.get('file_path', 'doc')}) {d.text.strip()}" for d in docs) if docs else "None"
-    history = "\n".join(f"User: {m['user']}\nAssistant: {m['assistant']}" for m in memory) if memory else "None"
+    context = "\n".join(f"({d.metadata.get('file_path', 'doc')}) {d.text.strip()}" for d in docs) if docs else "" # Streamlined
+    history = "\n".join(f"User: {m['user']}\nAssistant: {m['assistant']}" for m in memory) if memory else "" # Streamlined
     return f"""System Instructions:\n{system_prompt}\n\nContextual Retrieval:\n{context}\n\nChat History:\n{history}\n\nUser Question: {query}\n\nAnswer as clearly as possible. Only cite the context section if quoting documents."""
 
 # === LangGraph Nodes ===
@@ -185,7 +253,7 @@ def main():
 
     console = Console()
     print_intro_banner(console)
-    index = load_index()
+    index = load_index() # This will now handle loading or building the index
     graph = build_graph()
     chat_history = []
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
