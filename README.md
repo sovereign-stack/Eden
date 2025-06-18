@@ -1,6 +1,6 @@
 # Eden KOS – Knowledge Operating System (v0.3)
 
-A fully offline Retrieval-Augmented Generation (RAG) assistant built for local knowledge workflows. Designed to operate efficiently on NVIDIA Jetson Orin Nano and other CUDA-enabled systems. Uses LangGraph, LlamaIndex, and Ollama for modular document-query pipelines.
+A fully offline Retrieval-Augmented Generation (RAG) assistant built for local knowledge workflows. Designed to operate efficiently on NVIDIA Jetson Orin Nano and other CUDA-enabled systems. Uses LangGraph, LlamaIndex, HuggingFace, and Ollama for rich, air-gapped LLM interaction.
 
 ---
 
@@ -16,10 +16,46 @@ A fully offline Retrieval-Augmented Generation (RAG) assistant built for local k
 - Embedding indexing via `LlamaIndex + HuggingFaceEmbedding`
 - CLI Banner & Benchmarking Tools
 - Logging support to Markdown
+- Automatic, hashed document directory change detection triggers index rebuilds
+- Fully offline operation with enforced HuggingFace/transformer env variables
+- Easy switching of Ollama model via CLI flag
+- Robust memory loading, saving, and clearing
+- Graceful shutdown of Ollama models to free system resources
 
 ---
 
 ## 🧪 Scripts
+
+### `latest_optimized.py`
+> 🌱 Primary CLI with full RAG pipeline, local GPU embedding, and robust document change detection
+
+**Key Features:**
+- Loads or (re)builds the embedding index based on document directory changes (using MD5 hash)
+- Works fully offline, setting all HuggingFace and transformer environment variables
+- Explicit local path for HuggingFace embedding model
+- Jetson/PyTorch compatibility patch (auto-applied)
+- CLI interface with system prompt selection and conversation history
+- Modular LangGraph node pipeline: `retrieve`, `recall_memory`, `prompt_compose`, `generate_response`, `update_memory`, `display_response`
+- Saves conversation memory and supports clearing/reset
+- Markdown/Panel output using Rich
+- Optional Markdown session logging
+- Graceful Ollama model shutdown on quit
+
+**Example Usage:**
+```bash
+python latest_optimized.py --model qwen3:1.7b --log
+```
+
+**Flags:**
+- `--model`: Ollama model name (default: `qwen3:1.7b`)
+- `--log`: Save Markdown transcript to `logs/`
+
+**Notes:**
+- Embeddings use a local cache of `all-MiniLM-L6-v2` (edit the path in the script if needed)
+- Document changes are detected by hashing file paths, sizes, and modification times to trigger automatic reindexing
+- Session memory stored in `memory/chat_history.json`
+
+---
 
 ### `latest_benchmarking.py`
 > 💻 Interactive CLI with benchmarking, logging, and model flexibility
@@ -30,12 +66,10 @@ python latest_benchmarking.py --model gemma3:1b --log
 ```
 
 **Flags**:
-
 * `--model`: Model name (as recognized by Ollama, e.g. `qwen3:1.7b`)
 * `--log`: Save Markdown transcript to `logs/`
 
 **Notes**:
-
 * Embeddings use `sentence-transformers/all-MiniLM-L6-v2`
 * Models must be preloaded into Ollama and run offline
 * Logs stored in `logs/` (excluded via `.gitignore`)
@@ -60,8 +94,10 @@ python latest_benchmarking.py --model gemma3:1b --log
 ├── docs/               # Place your indexed documents here
 ├── memory/             # Stores conversation history (JSON)
 ├── logs/               # (Optional) Markdown chat transcripts (auto-created)
+├── embedding_store/    # Stores persistant indexing
 ├── stable.py           # Streaming offline assistant CLI
 ├── latest_benchmarking.py  # Benchmark + logging CLI tool
+├── latest_optimized.py     # Main CLI RAG assistant with dynamic index and memory
 ├── README.md
 └── .gitignore          # Ignores memory/, logs/, etc.
 ```
@@ -78,6 +114,8 @@ python latest_benchmarking.py --model gemma3:1b --log
 ```bash
 pip install -r requirements.txt
 ```
+
+> **Note:** If your HuggingFace model cache is in a different location, edit the `EMBEDDING_MODEL` path in `latest_optimized.py`.
 
 ---
 
@@ -122,6 +160,10 @@ Ensure the following folders are ignored:
 
 ```gitignore
 memory/
+logs/
+__pycache__/
+*.pyc
+```
 logs/
 __pycache__/
 *.pyc
