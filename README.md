@@ -1,4 +1,4 @@
-# Eden KOS – Knowledge Operating System (v0.3)
+# Eden KOS – Knowledge Orchestration System (v0.3)
 
 A fully offline Retrieval-Augmented Generation (RAG) assistant built for local knowledge workflows. Designed to operate efficiently on NVIDIA Jetson Orin Nano and other CUDA-enabled systems. Uses LangGraph, LlamaIndex, HuggingFace, and Ollama for rich, air-gapped LLM interaction.
 
@@ -164,7 +164,4 @@ logs/
 __pycache__/
 *.pyc
 ```
-logs/
-__pycache__/
-*.pyc
-```
+
